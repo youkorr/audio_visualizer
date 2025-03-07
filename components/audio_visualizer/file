@@ -1,0 +1,158 @@
+#pragma once
+
+#include "esphome.h"
+#include "esphome/core/component.h"
+#include "esphome/components/display/display.h"
+#include "esphome/components/lvgl/lvgl.h"
+
+namespace esphome {
+namespace audio_visualizer {
+
+class AudioVisualizer : public Component {
+ public:
+  AudioVisualizer() {}
+
+  void setup() override {
+    // Initialisation du composant
+    ESP_LOGD("audio_visualizer", "Initialisation du visualiseur auto-animé");
+    
+    // Créer l'objet LVGL
+    this->screen_ = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(this->screen_, lv_color_hex(0x000000), LV_PART_MAIN);
+
+    // Nombre de barres pour la visualisation
+    const int BAR_COUNT = 32;
+    const int BAR_WIDTH = 10;
+    const int BAR_GAP = 2;
+    const int MAX_BAR_HEIGHT = 180;
+    
+    // Créer les barres
+    for (int i = 0; i < BAR_COUNT; i++) {
+      lv_obj_t* bar = lv_obj_create(this->screen_);
+      lv_obj_set_size(bar, BAR_WIDTH, 1);  // Hauteur initiale minimale
+      
+      // Position de la barre
+      int x_pos = 20 + i * (BAR_WIDTH + BAR_GAP);
+      int y_pos = 220;  // Position en bas
+      lv_obj_set_pos(bar, x_pos, y_pos);
+      
+      // Couleur des barres - gradient de bleu à violet
+      lv_color_t bar_color;
+      if (i < BAR_COUNT * 0.7) {
+        bar_color = lv_color_hex(0x0088FF);  // Bleu
+      } else if (i < BAR_COUNT * 0.9) {
+        bar_color = lv_color_hex(0x8844FF);  // Violet
+      } else {
+        bar_color = lv_color_hex(0xFF4488);  // Rose/Rouge
+      }
+      
+      lv_obj_set_style_bg_color(bar, bar_color, LV_PART_MAIN);
+      lv_obj_set_style_border_width(bar, 0, LV_PART_MAIN);
+      
+      // Stocker la barre dans notre tableau
+      this->bars_.push_back(bar);
+      this->heights_.push_back(1);
+      this->target_heights_.push_back(1);
+    }
+    
+    // Définir l'écran actif
+    lv_scr_load(this->screen_);
+    
+    // Initialiser la valeur d'animation
+    this->last_animation_time_ = millis();
+  }
+
+  void loop() override {
+    // Animation autonome intégrée directement dans la boucle
+    unsigned long current_time = millis();
+    
+    // Mettre à jour l'animation toutes les 50ms (20fps)
+    if (current_time - this->last_animation_time_ >= 50) {
+      this->generate_random_heights();
+      this->update_bars();
+      this->last_animation_time_ = current_time;
+    }
+  }
+
+ private:
+  lv_obj_t *screen_;
+  std::vector<lv_obj_t*> bars_;
+  std::vector<int> heights_;
+  std::vector<int> target_heights_;
+  unsigned long last_animation_time_;  // Pour suivre le temps
+  
+  // Génère des hauteurs aléatoires pour simuler l'animation audio
+  void generate_random_heights() {
+    const int MAX_HEIGHT = 180;
+    const int MIN_HEIGHT = 5;
+    
+    // Effet de déplacement d'onde
+    for (size_t i = 0; i < target_heights_.size(); i++) {
+      // Générer une nouvelle hauteur cible avec une distribution qui crée un effet d'onde
+      float position = static_cast<float>(i) / target_heights_.size();
+      float time_factor = millis() / 1000.0f;
+      
+      // Créer plusieurs ondes avec des fréquences différentes pour un effet plus naturel
+      float wave1 = sinf(position * 3.14159f * 2.0f + time_factor) * 0.4f;
+      float wave2 = sinf(position * 5.14159f + time_factor * 1.5f) * 0.3f;
+      float wave3 = sinf(position * 7.14159f + time_factor * 0.7f) * 0.2f;
+      
+      // Combiner les ondes
+      float base_height = (wave1 + wave2 + wave3 + 0.9f) / 1.8f;  // Normaliser entre 0 et 1
+      
+      // Ajouter un peu de randomisation
+      float random_factor = static_cast<float>(esp_random() % 100) / 100.0f * 0.2f;
+      float height_factor = base_height * 0.8f + random_factor;
+      
+      // S'assurer que le facteur est dans la plage [0, 1]
+      if (height_factor > 1.0f) height_factor = 1.0f;
+      if (height_factor < 0.0f) height_factor = 0.0f;
+      
+      // Calculer la hauteur finale
+      int new_height = MIN_HEIGHT + static_cast<int>(height_factor * (MAX_HEIGHT - MIN_HEIGHT));
+      
+      // Définir la hauteur cible
+      target_heights_[i] = new_height;
+    }
+  }
+  
+  // Met à jour l'affichage des barres
+  void update_bars() {
+    const float SMOOTH_FACTOR = 0.3f;  // Facteur de lissage pour l'animation
+    
+    for (size_t i = 0; i < bars_.size(); i++) {
+      // Interpolation lisse vers la hauteur cible
+      heights_[i] = heights_[i] + (target_heights_[i] - heights_[i]) * SMOOTH_FACTOR;
+      
+      // Mettre à jour la taille de la barre
+      lv_obj_set_height(bars_[i], heights_[i]);
+      
+      // Repositionner le bas de la barre
+      lv_obj_set_y(bars_[i], 220 - heights_[i]);
+      
+      // Ajouter un effet de brillance au-dessus des barres hautes
+      if (heights_[i] > 100) {
+        int bright_intensity = (heights_[i] - 100) * 2;
+        if (bright_intensity > 255) bright_intensity = 255;
+        
+        // Modifier la couleur de la barre pour les barres hautes
+        lv_color_t bright_color = lv_color_make(bright_intensity, bright_intensity, 255);
+        lv_obj_set_style_bg_color(bars_[i], bright_color, LV_PART_MAIN);
+      } else {
+        // Restaurer la couleur normale
+        lv_color_t bar_color;
+        if (i < bars_.size() * 0.7) {
+          bar_color = lv_color_hex(0x0088FF);  // Bleu
+        } else if (i < bars_.size() * 0.9) {
+          bar_color = lv_color_hex(0x8844FF);  // Violet
+        } else {
+          bar_color = lv_color_hex(0xFF4488);  // Rose/Rouge
+        }
+        lv_obj_set_style_bg_color(bars_[i], bar_color, LV_PART_MAIN);
+      }
+    }
+  }
+};
+
+}  // namespace audio_visualizer
+}  // namespace esphome
