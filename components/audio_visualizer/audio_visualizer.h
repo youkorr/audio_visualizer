@@ -18,17 +18,10 @@ class AudioVisualizer : public Component {
     // Initialisation du composant
     ESP_LOGD("audio_visualizer", "Initialisation du visualiseur audio");
     
-    // L'écran sera configuré lors de l'appel à set_parent_screen
-  }
-  
-  // Méthode pour définir l'écran parent (appelée depuis la configuration LVGL)
-  void set_parent_screen(lv_obj_t *parent) {
-    // Créer l'objet conteneur sur l'écran parent
-    this->container_ = lv_obj_create(parent);
-    lv_obj_set_size(this->container_, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(this->container_, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_clear_flag(this->container_, LV_OBJ_FLAG_SCROLLABLE);
-    
+    // Créer l'objet LVGL
+    this->screen_ = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(this->screen_, lv_color_hex(0x000000), LV_PART_MAIN);
+
     // Nombre de barres pour la visualisation
     const int BAR_COUNT = 32;
     const int BAR_WIDTH = 10;
@@ -37,7 +30,7 @@ class AudioVisualizer : public Component {
     
     // Créer les barres
     for (int i = 0; i < BAR_COUNT; i++) {
-      lv_obj_t* bar = lv_obj_create(this->container_);
+      lv_obj_t* bar = lv_obj_create(this->screen_);
       lv_obj_set_size(bar, BAR_WIDTH, 1);  // Hauteur initiale minimale
       
       // Position de la barre
@@ -63,6 +56,9 @@ class AudioVisualizer : public Component {
       this->heights_.push_back(1);
       this->target_heights_.push_back(1);
     }
+    
+    // Définir l'écran actif
+    lv_scr_load(this->screen_);
   }
 
   void loop() override {
@@ -76,10 +72,11 @@ class AudioVisualizer : public Component {
   }
 
  private:
-  lv_obj_t *container_;
+  lv_obj_t *screen_;
   std::vector<lv_obj_t*> bars_;
   std::vector<int> heights_;
   std::vector<int> target_heights_;
+  // Pas besoin de stocker l'intervalle car il est géré en externe
   
   // Génère des hauteurs aléatoires pour simuler l'animation audio
   void generate_random_heights() {
